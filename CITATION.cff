@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+title: "Epidemic Simulation Benchmark"
+message: "If you use this software, please cite it using the metadata in this file."
+type: software
+authors:
+  - family-names: Potindji
+    given-names: Malraux
+    email: malraux.potindji@gmail.com
+repository-code: "https://github.com/mlrx-potindji/epidemic-sim-benchmark"
+version: 0.1.0
+date-released: 2026-09-11
+license: Apache-2.0
+abstract: "Epidemic simulation benchmark for ECS and Mesa agent-based models."
