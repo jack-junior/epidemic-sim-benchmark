@@ -8,6 +8,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "mesa (>=3.5.0,<4.0.0)",
+    "networkx (>=3.0,<4.0)",  # imported by mesa 3.5 but not declared by it
     "esper (>=3.7,<4.0)",
     "numpy (>=2.0.0,<3.0.0)",
     "scipy (>=1.14.0,<2.0.0)",
@@ -22,3 +23,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/epidemic_sim"]
+
+[dependency-groups]
+dev = [
+    "pytest (>=8.0)",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: statistical parity tests over replicated runs"]
