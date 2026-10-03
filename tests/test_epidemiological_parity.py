@@ -1,0 +1,73 @@
+"""Epidemiological parity: distribution of the epidemic indicators of ECS vs Mesa.
+
+Estimands, tests and acceptance rule are documented in ``epidemic_sim.analysis.parity``.
+Both implementations are run on independent seeds; the means, the whole distributions
+and the variances of the three estimands must agree.
+"""
+import contextlib
+import io
+
+import numpy as np
+import pytest
+
+from epidemic_sim.analysis.parity import ESTIMANDS, compare_estimand, summarise
+from epidemic_sim.ecs.simulation import SIREpidemicModel
+from epidemic_sim.mesa import MesaSIREpidemicModel
+
+# Regression guard run on 4 scenarios x 3 estimands x 3 tests = 36 comparisons: the error level of
+# each is lowered to 0.001 (family-wise false-alarm rate about 3 %). The report script
+# experiments/epi_parity.py uses alpha = 0.01 with many more replicates.
+ALPHA = 0.001
+
+SCENARIOS = {
+    "hazard_similarity": dict(spatial_new=True, network_new=True,
+                              space_attribute_similarity=True, dispersion=0.65),
+    "hazard_random": dict(spatial_new=True, network_new=True, space_attribute_similarity=False),
+    "sequential_random": dict(spatial_new=False, network_new=False, space_attribute_similarity=False),
+    "hazard_quarantine": dict(spatial_new=True, network_new=True, enable_quarantine=True,
+                              space_attribute_similarity=True, dispersion=0.65),
+}
+
+
+def replicate(scenario: dict, replicates: int, n_agents: int = 200, world_size: int = 150):
+    base = dict(n_agents=n_agents, world_size=world_size, initial_infected=6,
+                beta_spatial=0.3, beta_network=0.25)
+    runs = {"ecs": [], "mesa": []}
+    for r in range(replicates):
+        with contextlib.redirect_stdout(io.StringIO()):
+            ecs = SIREpidemicModel(seed=500 + r, **base, **scenario)
+            ecs.run(300)
+        runs["ecs"].append(summarise(ecs.time_series_data, n_agents))
+        ecs.clean_up()
+        model = MesaSIREpidemicModel(seed=900_000 + r, collect_spatial=False, **base, **scenario)
+        with contextlib.redirect_stdout(io.StringIO()):
+            model.run(300)
+        runs["mesa"].append(summarise(model.time_series_data, n_agents))
+    return runs
+
+
+def test_summarise_gives_the_three_estimands():
+    series = {"susceptible": [8, 5, 4, 4], "infected": [2, 4, 5, 3], "recovered": [0, 1, 1, 3],
+              "death": [0, 0, 0, 0]}
+    assert summarise(series, 10) == {"attack_rate": 0.6, "peak_prevalence": 0.5, "time_to_peak": 2.0}
+
+
+def test_comparison_detects_a_shift_and_a_variance_change():
+    rng = np.random.default_rng(0)
+    same = compare_estimand(rng.normal(0, 1, 200), rng.normal(0, 1, 200), rng)
+    assert same["parity"]
+    shifted = compare_estimand(rng.normal(0, 1, 200), rng.normal(1, 1, 200), rng)
+    assert not shifted["parity"] and shifted["p_mean_welch"] < 0.01
+    wider = compare_estimand(rng.normal(0, 1, 200), rng.normal(0, 2, 200), rng)
+    assert not wider["parity"] and wider["variance_ratio_low"] > 1
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("name", sorted(SCENARIOS))
+def test_epidemic_indicators_have_the_same_mean_and_variance(name):
+    runs = replicate(SCENARIOS[name], replicates=60)
+    rng = np.random.default_rng(0)
+    for estimand in ESTIMANDS:
+        result = compare_estimand([r[estimand] for r in runs["ecs"]],
+                                  [r[estimand] for r in runs["mesa"]], rng, alpha=ALPHA)
+        assert result["parity"], f"{name}/{estimand}: {result}"

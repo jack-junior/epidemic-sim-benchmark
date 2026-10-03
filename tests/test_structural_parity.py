@@ -1,0 +1,122 @@
+"""Structural parity between the ECS (Esper) and the Mesa implementations.
+
+Both models are built with the same parameters and must expose the same population,
+the same initial infections, the same law of the initial contact network and the same
+output format. This is NOT the epidemiological parity (see test_epidemiological_parity.py):
+the two models use different random draws, so nothing is compared draw by draw.
+"""
+import contextlib
+import io
+from dataclasses import dataclass
+
+import esper
+import numpy as np
+import pytest
+from scipy.stats import ks_2samp
+
+from epidemic_sim.ecs.components import ContactNetwork, Demographics, Infected, Location
+from epidemic_sim.ecs.simulation import SIREpidemicModel
+from epidemic_sim.mesa import MesaSIREpidemicModel
+from epidemic_sim.mesa.setup import State
+
+PARAMS = dict(n_agents=600, world_size=300, initial_infected=12, spatial_new=True,
+              network_new=True, space_attribute_similarity=True, dispersion=0.65)
+
+
+def build_ecs(**kwargs) -> SIREpidemicModel:
+    with contextlib.redirect_stdout(io.StringIO()):
+        return SIREpidemicModel(**kwargs)
+
+
+@dataclass
+class Snapshot:
+    """Population and contact-network summary of a model."""
+
+    x: np.ndarray
+    y: np.ndarray
+    age: np.ndarray
+    mobility: np.ndarray
+    infected: int
+    degree: np.ndarray        # contacts per agent (0 when the agent has none)
+    edge_distance: np.ndarray
+    edge_age_gap: np.ndarray
+    edge_strength: np.ndarray
+
+
+def ecs_snapshot(model: SIREpidemicModel) -> Snapshot:
+    esper.switch_world(model.world_name)
+    where, years, rows = {}, {}, []
+    for entity, (location, demographics) in esper.get_components(Location, Demographics):
+        where[entity], years[entity] = (location.x, location.y), demographics.age
+        rows.append((location.x, location.y, demographics.age, demographics.mobility))
+    degree = {entity: 0 for entity in where}
+    distance, gap, strength = [], [], []
+    for entity, (network,) in esper.get_components(ContactNetwork):
+        degree[entity] = len(network.contacts)
+        for other, weight in zip(network.contacts, network.contact_strength):
+            distance.append(np.hypot(where[entity][0] - where[other][0], where[entity][1] - where[other][1]))
+            gap.append(abs(years[entity] - years[other]))
+            strength.append(weight)
+    x, y, age, mobility = (np.array(column, dtype=float) for column in zip(*rows))
+    return Snapshot(x, y, age, mobility, len(esper.get_component(Infected)),
+                    np.array(list(degree.values())), np.array(distance), np.array(gap), np.array(strength))
+
+
+def mesa_snapshot(model: MesaSIREpidemicModel) -> Snapshot:
+    people = model.space.active_agents
+    distance, gap, strength = [], [], []
+    for person in people:
+        for other, weight in zip(person.contacts, person.contact_strength):
+            distance.append(np.hypot(person.x - other.x, person.y - other.y))
+            gap.append(abs(person.age - other.age))
+            strength.append(weight)
+    return Snapshot(model.space.agent_positions[:, 0].copy(), model.space.agent_positions[:, 1].copy(),
+                    np.array([p.age for p in people], dtype=float),
+                    np.array([p.mobility for p in people]),
+                    sum(p.state is State.Infected for p in people),
+                    np.array([len(p.contacts) for p in people]),
+                    np.array(distance), np.array(gap), np.array(strength))
+
+
+@pytest.fixture(scope="module")
+def snapshots() -> tuple[Snapshot, Snapshot]:
+    return ecs_snapshot(build_ecs(seed=21, **PARAMS)), mesa_snapshot(MesaSIREpidemicModel(seed=21, **PARAMS))
+
+
+def test_same_population_size_and_initial_infections(snapshots):
+    ecs, mesa = snapshots
+    assert len(ecs.x) == len(mesa.x) == PARAMS["n_agents"]
+    assert ecs.infected == mesa.infected == PARAMS["initial_infected"]
+
+
+@pytest.mark.parametrize("attribute", ["x", "y", "age", "mobility"])
+def test_same_law_of_the_population_attributes(snapshots, attribute):
+    ecs, mesa = snapshots
+    assert ks_2samp(getattr(ecs, attribute), getattr(mesa, attribute)).pvalue > 0.001
+
+
+def test_same_law_of_the_contact_network(snapshots):
+    ecs, mesa = snapshots
+    # number of contacts: negative binomial with mean ``average_contacts`` = 10 (3 standard errors)
+    for snapshot in (ecs, mesa):
+        assert abs(snapshot.degree.mean() - 10) < 1.6
+    # homophily signature of the edges: mean distance, mean age gap, mean tie strength
+    for name in ("edge_distance", "edge_age_gap", "edge_strength"):
+        a, b = getattr(ecs, name).mean(), getattr(mesa, name).mean()
+        assert abs(a - b) / a < 0.08, f"{name}: ECS {a:.3f} vs Mesa {b:.3f}"
+
+
+def test_same_output_format_and_conservation():
+    kwargs = dict(n_agents=120, world_size=100, initial_infected=4, spatial_new=True, network_new=True)
+    ecs = build_ecs(seed=2, **kwargs)
+    mesa = MesaSIREpidemicModel(seed=2, **kwargs)
+    with contextlib.redirect_stdout(io.StringIO()):
+        ecs.run(15)
+        mesa.run(15)
+    for model in (ecs, mesa):
+        series = model.time_series_data
+        assert set(series) == {"time", "susceptible", "infected", "recovered", "death"}
+        for i in range(len(series["time"])):
+            assert (series["susceptible"][i] + series["infected"][i]
+                    + series["recovered"][i] + series["death"][i]) == 120
+    ecs.clean_up()

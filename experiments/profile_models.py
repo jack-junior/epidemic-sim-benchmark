@@ -66,9 +66,9 @@ def profile_ecs(n_agents, steps):
 def profile_mesa(n_agents, steps):
     model = MesaSIREpidemicModel(**config(n_agents))
     totals = defaultdict(float)
-    Person.move = timed(Person.move, "1 déplacement", totals)
     Person.progress_disease = timed(Person.progress_disease, "6 évolution de la maladie", totals)
     for name, label in {
+        "_move": "1 déplacement",
         "_rewire_network": "2 re-câblage du réseau",
         "_spatial_transmission_hazard": "3 contamination par proximité",
         "_network_transmission_hazard": "4 contamination par les contacts",
@@ -78,7 +78,7 @@ def profile_mesa(n_agents, steps):
     start = time.perf_counter()
     with contextlib.redirect_stdout(io.StringIO()):
         for _ in range(steps):
-            model.step()
+            model.run_for(1)
     return time.perf_counter() - start, totals
 
 
