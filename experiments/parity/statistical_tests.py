@@ -1,4 +1,7 @@
-"""Epidemiological parity between two implementations of the model.
+"""Epidemiological parity: compare distributions of ECS vs Mesa.
+
+This module is part of the benchmark experiment suite, not the library. Use it
+only in ``experiments/parity/compare_implementations.py``.
 
 Structural parity (same parameters, same mechanisms, same outputs) is checked by unit
 tests. *Epidemiological* parity asks whether the two implementations give the same

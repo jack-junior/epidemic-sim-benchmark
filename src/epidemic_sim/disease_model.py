@@ -1,8 +1,7 @@
 """Disease model constants and parameters.
 
-These parameters define the SIR epidemic model semantics across all
-implementations (ECS, Mesa, optimization kernels). Changing a value here
-updates all frameworks.
+These parameters define the SIR epidemic model semantics across the ECS and
+Mesa implementations. Changing a value here updates both implementations.
 """
 
 from dataclasses import dataclass

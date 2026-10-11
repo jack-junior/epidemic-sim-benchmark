@@ -1,19 +1,21 @@
-"""Epidemiological parity report: ECS (Esper) vs Mesa over independent replicates.
+"""Compare epidemiological outcomes from ECS (Esper) and Mesa over independent replicates.
 
-    uv run python experiments/epi_parity.py --replicates 100 --n-agents 300 --scenario hazard_similarity
+    uv run python -m experiments.parity.compare_implementations --replicates 100 --n-agents 300
 
-Writes results/epi_parity_<scenario>.json and prints a table.
+Writes a JSON report under ``results/`` and prints a summary table.
 """
 import argparse
 import contextlib
 import io
 import json
+import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 
-from epidemic_sim.analysis.parity import ESTIMANDS, compare_estimand, summarise
+from experiments.parity.statistical_tests import ESTIMANDS, compare_estimand, summarise
 from epidemic_sim.ecs.simulation import SIREpidemicModel
 from epidemic_sim.mesa import MesaSIREpidemicModel
 
@@ -47,7 +49,7 @@ def replicate(scenario: dict, replicates: int, n_agents: int, world_size: int, m
     return out
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", choices=sorted(SCENARIOS), default="hazard_similarity")
     parser.add_argument("--replicates", type=int, default=100)
@@ -55,7 +57,7 @@ def main() -> None:
     parser.add_argument("--world-size", type=int, default=200)
     parser.add_argument("--max-steps", type=int, default=300)
     parser.add_argument("--first-seed", type=int, default=1000)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     start = time.perf_counter()
     runs = replicate(SCENARIOS[args.scenario], args.replicates, args.n_agents,
@@ -78,4 +80,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

@@ -31,4 +31,5 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = ["slow: statistical parity tests over replicated runs"]

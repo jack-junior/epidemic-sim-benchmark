@@ -1,17 +1,19 @@
-"""Temps passé dans chaque système, ECS (Esper) vs Mesa, sur un nombre de pas FIXE.
+"""Time spent in each system, ECS (Esper) vs Mesa, for a fixed number of steps.
 
-    uv run python experiments/profile_models.py                 # 1000 agents, 50 pas
-    uv run python experiments/profile_models.py --n-agents 2000 --steps 40
+    uv run python -m experiments.profiling.profile_models
+    uv run python -m experiments.profiling.profile_models --n-agents 2000 --steps 40
 
-Même configuration que la démo de scripts/run_ecs.py. Les diagnostics d'affichage de l'ECS
-sont coupés pour ne pas fausser la mesure. Résultat = une seule exécution : à répéter
-plusieurs fois avant d'en tirer des conclusions.
+Uses the same configuration as ``scripts/run_ecs.py``. ECS diagnostic output is
+disabled to avoid skewing the measurements. This is a single run; repeat it
+before drawing conclusions.
 """
 import argparse
 import contextlib
 import io
+import sys
 import time
 from collections import defaultdict
+from collections.abc import Sequence
 
 import esper
 
@@ -44,12 +46,12 @@ def profile_ecs(n_agents, steps):
     esper.switch_world(model.world_name)
     totals = defaultdict(float)
     labels = {
-        "MovementSystem": "1 déplacement",
-        "NetworkRewiringystem": "2 re-câblage du réseau",
-        "SpatialTransmissionSystemNew": "3 contamination par proximité",
-        "NetworkTransmissionSystemNew": "4 contamination par les contacts",
-        "InfectionResolutionSystem": "5 tirage des nouvelles infections",
-        "DiseaseProgressionSystem": "6 évolution de la maladie",
+        "MovementSystem": "1 movement",
+        "NetworkRewiringystem": "2 network rewiring",
+        "SpatialTransmissionSystemNew": "3 spatial transmission",
+        "NetworkTransmissionSystemNew": "4 network transmission",
+        "InfectionResolutionSystem": "5 infection resolution",
+        "DiseaseProgressionSystem": "6 disease progression",
     }
     for class_name, label in labels.items():
         processor = esper.get_processor(getattr(ecs_systems, class_name))
@@ -66,13 +68,13 @@ def profile_ecs(n_agents, steps):
 def profile_mesa(n_agents, steps):
     model = MesaSIREpidemicModel(**config(n_agents))
     totals = defaultdict(float)
-    Person.progress_disease = timed(Person.progress_disease, "6 évolution de la maladie", totals)
+    Person.progress_disease = timed(Person.progress_disease, "6 disease progression", totals)
     for name, label in {
-        "_move": "1 déplacement",
-        "_rewire_network": "2 re-câblage du réseau",
-        "_spatial_transmission_hazard": "3 contamination par proximité",
-        "_network_transmission_hazard": "4 contamination par les contacts",
-        "_resolve_infections": "5 tirage des nouvelles infections",
+        "_move": "1 movement",
+        "_rewire_network": "2 network rewiring",
+        "_spatial_transmission_hazard": "3 spatial transmission",
+        "_network_transmission_hazard": "4 network transmission",
+        "_resolve_infections": "5 infection resolution",
     }.items():
         setattr(model, name, timed(getattr(model, name), label, totals))
     start = time.perf_counter()
@@ -87,14 +89,18 @@ def show(title, total, totals):
     for label in sorted(totals):
         print(f"  {label:38s} {totals[label]:7.2f} s  {100 * totals[label] / total:5.1f} %")
     rest = total - sum(totals.values())
-    print(f"  {'reste (collecte des données, etc.)':38s} {rest:7.2f} s  {100 * rest / total:5.1f} %")
+    print(f"  {'other (data collection, etc.)':38s} {rest:7.2f} s  {100 * rest / total:5.1f} %")
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--n-agents", type=int, default=1000)
+    parser.add_argument("--steps", type=int, default=50)
+    args = parser.parse_args(argv)
+    print(f"{args.n_agents} agents, {args.steps} steps (fixed count)")
+    show("ECS (Esper)", *profile_ecs(args.n_agents, args.steps))
+    show("Mesa (objets)", *profile_mesa(args.n_agents, args.steps))
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--n-agents", type=int, default=1000)
-    parser.add_argument("--steps", type=int, default=50)
-    args = parser.parse_args()
-    print(f"{args.n_agents} agents, {args.steps} pas (nombre de pas fixe)")
-    show("ECS (Esper)", *profile_ecs(args.n_agents, args.steps))
-    show("Mesa (objets)", *profile_mesa(args.n_agents, args.steps))
+    main(sys.argv[1:])

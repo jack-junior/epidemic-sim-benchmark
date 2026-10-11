@@ -1,6 +1,7 @@
 """Epidemiological parity: distribution of the epidemic indicators of ECS vs Mesa.
 
-Estimands, tests and acceptance rule are documented in ``epidemic_sim.analysis.parity``.
+Estimands, tests and acceptance rule are documented in
+``experiments.parity.statistical_tests``.
 Both implementations are run on independent seeds; the means, the whole distributions
 and the variances of the three estimands must agree.
 """
@@ -10,13 +11,13 @@ import io
 import numpy as np
 import pytest
 
-from epidemic_sim.analysis.parity import ESTIMANDS, compare_estimand, summarise
+from experiments.parity.statistical_tests import ESTIMANDS, compare_estimand, summarise
 from epidemic_sim.ecs.simulation import SIREpidemicModel
 from epidemic_sim.mesa import MesaSIREpidemicModel
 
 # Regression guard run on 4 scenarios x 3 estimands x 3 tests = 36 comparisons: the error level of
 # each is lowered to 0.001 (family-wise false-alarm rate about 3 %). The report script
-# experiments/epi_parity.py uses alpha = 0.01 with many more replicates.
+# compare_implementations.py uses alpha = 0.01 with many more replicates.
 ALPHA = 0.001
 
 SCENARIOS = {
