@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import List
 
+from ..disease_model import QUARANTINE_DURATION
+
 @dataclass
 class Location:
     """spatial location component"""
@@ -49,7 +51,7 @@ class Quarantined:
     """Quarantine switch"""
     start_day: int 
     compliance_level: float
-    duration: int = 14
+    duration: int = QUARANTINE_DURATION
     days_in_quarantine: int = 0
     original_mobility: float = 0.0  # Store original mobility to restore after quarantine
 
