@@ -6,6 +6,24 @@ import esper
 import math
 import uuid
 from ..randomness import RandomStreams
+from ..config import SimulationConfig
+from ..disease_model import (
+    AGE_RANGE,
+    IMMUNITY_RANGE,
+    INITIAL_DAYS_INFECTED,
+    INITIAL_VIRAL_LOAD_RANGE,
+    MOBILITY_RANGE,
+    QUARANTINE_COMPLIANCE,
+    RANDOM_NETWORK_STRENGTH_RANGE,
+    RECOVERY_TIME_MEAN,
+    RECOVERY_TIME_SD,
+    DiseaseModelConfig,
+    HealthState,
+)
+from ..validation import validate_all
+
+_DEFAULT_SIMULATION_CONFIG = SimulationConfig()
+_DEFAULT_DISEASE_MODEL_CONFIG = DiseaseModelConfig()
 
 # --------------------------------------------------
 # Entity class
@@ -43,13 +61,30 @@ class Entity:
 # --------------------------------------------------
 
 class SIREpidemicModel:
-    def __init__(self, seed: int, tau: float = 25, alpha = None, n_agents: int = 500, 
-                 world_size: int = 100, initial_infected: int = 5, average_contacts: int = 10, 
-                 beta_spatial: float = 0.10, beta_network: float = 0.20,
-                 enable_quarantine: bool = False, transmission_radius: float = 4.0, 
-                 world_name: Optional[str] = None, spatial_new: Optional[bool] = False,
-                 network_new: Optional[bool] = False, space_attribute_similarity: Optional[bool] = False,  
-                 dt: float = 1.0, dispersion: float = 0.7):
+    def __init__(
+        self,
+        seed: int,
+        tau: float = _DEFAULT_DISEASE_MODEL_CONFIG.tau,
+        alpha: float | None = _DEFAULT_DISEASE_MODEL_CONFIG.alpha,
+        n_agents: int = _DEFAULT_SIMULATION_CONFIG.n_agents,
+        world_size: int = _DEFAULT_SIMULATION_CONFIG.world_size,
+        initial_infected: int = _DEFAULT_SIMULATION_CONFIG.initial_infected,
+        average_contacts: int = _DEFAULT_SIMULATION_CONFIG.average_contacts,
+        beta_spatial: float = _DEFAULT_DISEASE_MODEL_CONFIG.beta_spatial,
+        beta_network: float = _DEFAULT_DISEASE_MODEL_CONFIG.beta_network,
+        enable_quarantine: bool = _DEFAULT_DISEASE_MODEL_CONFIG.enable_quarantine,
+        transmission_radius: float = (
+            _DEFAULT_DISEASE_MODEL_CONFIG.transmission_radius
+        ),
+        world_name: Optional[str] = None,
+        spatial_new: Optional[bool] = _DEFAULT_DISEASE_MODEL_CONFIG.spatial_new,
+        network_new: Optional[bool] = _DEFAULT_DISEASE_MODEL_CONFIG.network_new,
+        space_attribute_similarity: Optional[bool] = (
+            _DEFAULT_DISEASE_MODEL_CONFIG.space_attribute_similarity
+        ),
+        dt: float = _DEFAULT_DISEASE_MODEL_CONFIG.dt,
+        dispersion: float = _DEFAULT_DISEASE_MODEL_CONFIG.dispersion,
+    ):
 
     # Initialize model parameters
         self._validate_parameters(seed, tau, alpha, n_agents, world_size,
@@ -108,18 +143,24 @@ class SIREpidemicModel:
     def _validate_parameters(seed, tau, alpha, n_agents, world_size,
                              initial_infected, average_contacts, beta_spatial,
                              beta_network, transmission_radius, dt, dispersion):
-        if seed is not None and not isinstance(seed, int):
-            raise TypeError("seed must be an integer or None")
-        if n_agents < 1 or initial_infected < 0 or initial_infected > n_agents:
-            raise ValueError("n_agents must be positive and initial_infected must be in [0, n_agents]")
-        if world_size <= 0 or average_contacts < 0 or transmission_radius < 0 or dt <= 0:
-            raise ValueError("world_size and dt must be positive; contacts and radius cannot be negative")
-        if tau <= 0 or dispersion <= 0:
-            raise ValueError("tau and dispersion must be positive")
-        if alpha is not None and alpha <= 0:
-            raise ValueError("alpha must be positive")
-        if not 0 <= beta_spatial <= 1 or not 0 <= beta_network <= 1:
-            raise ValueError("transmission probabilities must be between 0 and 1")
+        validate_all(
+            SimulationConfig(
+                n_agents=n_agents,
+                world_size=world_size,
+                initial_infected=initial_infected,
+                average_contacts=average_contacts,
+                seed=seed,
+            ),
+            DiseaseModelConfig(
+                beta_spatial=beta_spatial,
+                beta_network=beta_network,
+                transmission_radius=transmission_radius,
+                dt=dt,
+                alpha=alpha,
+                tau=tau,
+                dispersion=dispersion,
+            ),
+        )
 
     def _register_systems(self, spatial_new: bool, network_new: bool,
                           enable_quarantine: bool):
@@ -133,7 +174,9 @@ class SIREpidemicModel:
             esper.add_processor(InfectionResolutionSystem(self.dt, self.rng), priority=70)
         esper.add_processor(DiseaseProgressionSystem(self.rng), priority=60)
         if enable_quarantine:
-            esper.add_processor(QuarantineSystem(0.8, self.rng), priority=60)
+            esper.add_processor(
+                QuarantineSystem(QUARANTINE_COMPLIANCE, self.rng), priority=60
+            )
         if hasattr(self, "_uses_similarity_network") and self._uses_similarity_network:
             esper.add_processor(NetworkRewiringystem(
                 self.entity_iDs, self.average_contacts, self.tau, self.alpha,
@@ -163,12 +206,12 @@ class SIREpidemicModel:
             ))
 
             esper.add_component(entity, Demographics(
-                age = self.rng.numpy.integers(0, 75),
-                mobility = self.rng.numpy.uniform(0.5, 20.0)
+                age=self.rng.numpy.integers(*AGE_RANGE),
+                mobility=self.rng.numpy.uniform(*MOBILITY_RANGE),
             ))
 
             esper.add_component(entity, Susceptible(
-                immunity = self.rng.numpy.uniform(0, 0.05)
+                immunity=self.rng.numpy.uniform(*IMMUNITY_RANGE)
             ))
 
     # --------------------------------------------------
@@ -199,7 +242,10 @@ class SIREpidemicModel:
                 num_contacts = min(num_contacts, len(possible_contacts))
                 contacts = self.rng.python.sample(possible_contacts, num_contacts)
 
-                strengths = [self.rng.python.uniform(0.1, 1.0) for _ in range(num_contacts)]
+                strengths = [
+                    self.rng.python.uniform(*RANDOM_NETWORK_STRENGTH_RANGE)
+                    for _ in range(num_contacts)
+                ]
 
                 esper.add_component(entity, ContactNetwork(contacts = contacts, 
                                                            contact_strength = strengths))
@@ -381,10 +427,18 @@ class SIREpidemicModel:
             if esper.has_component(entity, Susceptible):
                 esper.remove_component(entity, Susceptible)
                 esper.add_component(entity, Infected(
-                    viral_load = self.rng.numpy.uniform(700, 1000),
-                    days_infected = 1,
+                    viral_load=self.rng.numpy.uniform(*INITIAL_VIRAL_LOAD_RANGE),
+                    days_infected=INITIAL_DAYS_INFECTED,
                     infectious = True,
-                    recovery_time = max(1, int(self.rng.python.normalvariate(12, 4)))))
+                    recovery_time=max(
+                        1,
+                        int(
+                            self.rng.python.normalvariate(
+                                RECOVERY_TIME_MEAN, RECOVERY_TIME_SD
+                            )
+                        ),
+                    ),
+                ))
                 
                 if esper.has_component(entity, Location):
                     loc = esper.component_for_entity(entity, Location)
@@ -433,10 +487,10 @@ class SIREpidemicModel:
         n_death = len(esper.get_component(Dead))
 
         self.time_series_data["time"].append(self.step_count)
-        self.time_series_data["susceptible"].append(n_susceptible)
-        self.time_series_data["infected"].append(n_infected)
-        self.time_series_data["recovered"].append(n_recovered)
-        self.time_series_data["death"].append(n_death)
+        self.time_series_data[HealthState.SUSCEPTIBLE.value].append(n_susceptible)
+        self.time_series_data[HealthState.INFECTED.value].append(n_infected)
+        self.time_series_data[HealthState.RECOVERED.value].append(n_recovered)
+        self.time_series_data[HealthState.DEAD.value].append(n_death)
 
         return self.time_series_data
 

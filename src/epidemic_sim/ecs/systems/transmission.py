@@ -4,6 +4,16 @@ import random
 import numpy as np
 from ..components import *
 from ...randomness import RandomStreams
+from ...disease_model import (
+    IMMUNITY_AFTER_RECOVERY,
+    NEW_VIRAL_LOAD_RANGE,
+    QUARANTINE_DURATION,
+    QUARANTINE_EFFECT,
+    RECOVERY_PROBABILITY_RANGE,
+    RECOVERY_TIME_MEAN,
+    RECOVERY_TIME_SD,
+    REWIRING_DISPERSION,
+)
 
 # --------------------------------------------------
 # MovementSystem
@@ -73,10 +83,17 @@ class SpatialTransmissionSystem(esper.Processor):
                         # Infect the susceptible entity
                             esper.remove_component(sus_entity, Susceptible)
                             esper.add_component(sus_entity, Infected(
-                                viral_load=self.rng.python.uniform(500, 1000),
+                                viral_load=self.rng.python.uniform(*NEW_VIRAL_LOAD_RANGE),
                                 days_infected=0,
                                 infectious=True,
-                                recovery_time = max(1, int(self.rng.python.normalvariate(12, 4))) # Recovery time drawn from normal distribution with mean 12 days and std dev 4 days, minimum of 1 day
+                                recovery_time=max(
+                                    1,
+                                    int(
+                                        self.rng.python.normalvariate(
+                                            RECOVERY_TIME_MEAN, RECOVERY_TIME_SD
+                                        )
+                                    ),
+                                )
                             ))
 
 class SpatialTransmissionSystemNew(esper.Processor):
@@ -144,7 +161,9 @@ class NetworkTransmissionSystem(esper.Processor):
             if esper.has_component(inf_entity, Quarantined):
                 quarantine = esper.component_for_entity(inf_entity, Quarantined)
                 if quarantine.compliance_level > 0:
-                    transmission_modifier *= (1 - quarantine.compliance_level * 0.9)  # Reduce transmission probability based on compliance level, up to 90% reduction
+                    transmission_modifier *= (
+                        1 - quarantine.compliance_level * QUARANTINE_EFFECT
+                    )
                 
             adjusted_prob = self.base_prob * transmission_modifier
 
@@ -157,10 +176,17 @@ class NetworkTransmissionSystem(esper.Processor):
                         # Infect the susceptible entity
                         esper.remove_component(contact_iD, Susceptible)
                         esper.add_component(contact_iD, Infected(
-                                viral_load=self.rng.python.uniform(500, 1000),
+                                viral_load=self.rng.python.uniform(*NEW_VIRAL_LOAD_RANGE),
                             days_infected=0,
                             infectious=True,
-                                recovery_time = max(1, int(self.rng.python.normalvariate(12, 4))) # Recovery time drawn from normal distribution with mean 12 days and std dev 4 days, minimum of 1 day
+                                recovery_time=max(
+                                    1,
+                                    int(
+                                        self.rng.python.normalvariate(
+                                            RECOVERY_TIME_MEAN, RECOVERY_TIME_SD
+                                        )
+                                    ),
+                                )
                         ))
 
 class NetworkTransmissionSystemNew(esper.Processor):
@@ -181,7 +207,9 @@ class NetworkTransmissionSystemNew(esper.Processor):
             if esper.has_component(inf_entity, Quarantined):
                 quarantine = esper.component_for_entity(inf_entity, Quarantined)
                 if quarantine.compliance_level > 0:
-                    transmission_modifier *= (1 - quarantine.compliance_level * 0.9)
+                    transmission_modifier *= (
+                        1 - quarantine.compliance_level * QUARANTINE_EFFECT
+                    )
 
             adjusted_prob = self.base_prob * transmission_modifier
 
@@ -230,7 +258,7 @@ class NetworkRewiringystem(esper.Processor):
                 esper.remove_component(entity, ContactNetwork)
 
             #num_contacts = max(0, int(np.random.poisson(self.average_contacts))) 
-            k = 0.5  # dispersion parameter 
+            k = REWIRING_DISPERSION
             num_contacts = max(0, int(self.rng.numpy.negative_binomial(k, k / (k + self.average_contacts))))
 
             if num_contacts == 0:
@@ -350,10 +378,17 @@ class InfectionResolutionSystem(esper.Processor):
             if self.rng.python.random() < prob:
                 esper.remove_component(entity, Susceptible)
                 esper.add_component(entity, Infected(
-                    viral_load = self.rng.python.uniform(500, 1000),
+                    viral_load=self.rng.python.uniform(*NEW_VIRAL_LOAD_RANGE),
                     days_infected = 0,
                     infectious = True,
-                    recovery_time = max(1, int(self.rng.python.normalvariate(12, 4))) #
+                    recovery_time=max(
+                        1,
+                        int(
+                            self.rng.python.normalvariate(
+                                RECOVERY_TIME_MEAN, RECOVERY_TIME_SD
+                            )
+                        ),
+                    ),
                 ))
 
             # Remove the hazard component after processing
@@ -384,9 +419,13 @@ class DiseaseProgressionSystem(esper.Processor):
             #   and draw from that probability to determine if the entity dies during the infectious period
             #   which would then also impact quarantine end logic in the QuarantineSystem.
             if infected.days_infected >= infected.recovery_time:
-                if self.rng.python.random() < self.rng.python.uniform(0.97, 0.995):
+                if self.rng.python.random() < self.rng.python.uniform(
+                    *RECOVERY_PROBABILITY_RANGE
+                ):
                     esper.remove_component(entity, Infected)
-                    esper.add_component(entity, Recovered(immunity=0.9))  # Recovered with some immunity
+                    esper.add_component(
+                        entity, Recovered(immunity=IMMUNITY_AFTER_RECOVERY)
+                    )
                 else:
                     esper.remove_component(entity, Infected)
                     esper.add_component(entity, Dead(reason = "Disease",
@@ -424,10 +463,12 @@ class QuarantineSystem(esper.Processor):
                     esper.add_component(entity, Quarantined(
                         start_day = infected.days_infected,
                         compliance_level = self.compliance,
-                        duration = 14,
+                        duration=QUARANTINE_DURATION,
                         original_mobility = demographics.mobility
                     ))
-                    demographics.mobility *= (1 - self.compliance * 0.9)  # Reduce mobility based on compliance level, up to 90% reduction
+                    demographics.mobility *= (
+                        1 - self.compliance * QUARANTINE_EFFECT
+                    )
 
         # Update quarantine status
         for entity, quarantine in esper.get_component(Quarantined):

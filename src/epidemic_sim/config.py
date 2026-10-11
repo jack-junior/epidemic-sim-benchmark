@@ -1,16 +1,33 @@
+"""Simulation configuration: model sizing, random seeds, and I/O."""
+
 from dataclasses import dataclass
+
+from .disease_model import DiseaseModelConfig
 
 
 @dataclass(frozen=True)
 class SimulationConfig:
-    """Shared high-level configuration for ECS and Mesa implementations."""
+    """Simulation setup independent of the disease model."""
 
     n_agents: int = 500
     world_size: int = 100
     initial_infected: int = 5
     average_contacts: int = 10
-    beta_spatial: float = 0.10
-    beta_network: float = 0.20
-    transmission_radius: float = 4.0
-    dt: float = 1.0
     seed: int | None = None
+    max_steps: int = 400
+    collect_spatial: bool = True
+
+
+@dataclass(frozen=True)
+class BenchmarkConfig:
+    """Configuration for comparing simulation frameworks."""
+
+    simulation: SimulationConfig
+    disease_model: DiseaseModelConfig
+    frameworks: list[str] | None = None
+    n_replicates: int = 1
+    output_dir: str = "results"
+
+    def __post_init__(self) -> None:
+        if self.frameworks is None:
+            object.__setattr__(self, "frameworks", ["ecs", "mesa"])
