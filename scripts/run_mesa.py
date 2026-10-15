@@ -1,8 +1,45 @@
-"""Mesa simulation entry point."""
+"""Mesa simulation entry point (same demo configuration as ``run_ecs.py``).
+
+Run from the ``project_outputs`` folder to keep the generated files together:
+
+    cd project_outputs
+    uv run python ../scripts/run_mesa.py            # summary only
+    uv run python ../scripts/run_mesa.py --plot     # also save the epidemic curves
+"""
+import argparse
+import time
+
+from epidemic_sim.mesa import MesaSIREpidemicModel
 
 
 def main():
-    raise NotImplementedError("The Mesa implementation is not available yet.")
+    parser = argparse.ArgumentParser(description="Run the Mesa (OOP) epidemic model.")
+    parser.add_argument("--n-agents", type=int, default=1000)
+    parser.add_argument("--steps", type=int, default=400)
+    parser.add_argument("--seed", type=int, default=28022026)
+    parser.add_argument("--plot", action="store_true", help="save epidemic_curves_mesa.png")
+    args = parser.parse_args()
+
+    # Same parameters as the ECS demo in scripts/run_ecs.py
+    model = MesaSIREpidemicModel(seed=args.seed, enable_quarantine=False,
+                                 initial_infected=20, world_size=500,
+                                 beta_spatial=0.3, beta_network=0.25,
+                                 spatial_new=True, network_new=True,
+                                 space_attribute_similarity=True,
+                                 n_agents=args.n_agents, dt=1.0, dispersion=0.65)
+    start = time.perf_counter()
+    model.run(max_steps=args.steps)
+    elapsed = time.perf_counter() - start
+
+    series = model.time_series_data
+    print(f"steps run: {len(series['time'])} | time: {elapsed:.1f}s | "
+          f"peak infected: {max(series['infected'])} | "
+          f"recovered: {series['recovered'][-1]} | deaths: {series['death'][-1]} | "
+          f"never infected: {series['susceptible'][-1]}")
+
+    if args.plot:
+        from epidemic_sim.analysis.plotting import plot_epidemic_curves
+        plot_epidemic_curves(series, save_path="epidemic_curves_mesa.png")
 
 
 if __name__ == "__main__":

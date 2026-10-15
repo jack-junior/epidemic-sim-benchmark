@@ -31,9 +31,9 @@ The project currently demonstrates:
 - `src/epidemic_sim/mesa`: Mesa implementation area
 - `src/epidemic_sim/networks`: shared network utilities
 - `src/epidemic_sim/data`: data-related package code
-- `src/epidemic_sim/analysis`: analysis and visualization package code
+- `src/epidemic_sim/analysis`: library analysis and visualization utilities
 - `scripts`: executable ECS and data-generation scripts, plus planned Mesa and benchmark entry points
-- `experiments`: exploratory modeling workflows
+- `experiments`: benchmark, profiling, and parity experiment code
 - `data`: raw, processed, and generated datasets
 - `results` and `project_outputs`: generated artifacts
 
@@ -82,19 +82,17 @@ The synthetic-data workflow additionally requires SDV, which is kept outside
 the core dependencies because its current releases do not resolve for Python
 3.12.
 
-## Planned Mesa Benchmark
+## ECS vs Mesa Benchmark
 
-The following entry points are reserved for future work:
+Run the benchmark experiments from the repository root:
 
 ```bash
-uv run python scripts/run_mesa.py
-uv run python scripts/run_benchmark.py
+uv run python -m experiments.benchmark_runner parity --replicates 100 --n-agents 300
+uv run python -m experiments.benchmark_runner profile --n-agents 1000 --steps 50
 ```
 
-They currently report that the Mesa implementation and cross-implementation
-benchmark are not available yet. The planned benchmark will compare equivalent
-model semantics across ECS and Mesa, including runtime scaling, memory use,
-reproducibility, and the effort required to add new mechanisms.
+See [experiments/README.md](experiments/README.md) for options and quick-run
+instructions. The Mesa model is also available through `scripts/run_mesa.py`.
 
 ## Contributing
 
